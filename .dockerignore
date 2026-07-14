@@ -1,0 +1,15 @@
+.git
+.gitignore
+.dockerignore
+Dockerfile
+docker-compose.yml
+Django/venv/
+Django/Multi_Model_AI/db.sqlite3
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.env
+.agents/
+.gemini/
+*.log
