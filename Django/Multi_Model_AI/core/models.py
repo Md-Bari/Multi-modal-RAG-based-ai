@@ -97,7 +97,7 @@ class Chunk(models.Model):
     chunk_text = models.TextField()
     chunk_index = models.IntegerField()
     token_count = models.IntegerField()
-    embedding = VectorField(dimensions=1536, null=True, blank=True)
+    embedding = VectorField(dimensions=768, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
 

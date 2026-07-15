@@ -2,44 +2,80 @@ import os
 import logging
 import requests
 import json
-from typing import Generator, Union, List, Dict
+from typing import Generator, Union, List, Dict, Optional
 from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
 class LLMService:
     @staticmethod
+    def get_primary_provider() -> str:
+        return os.environ.get("LLM_PROVIDER", "ollama").lower()
+
+    @staticmethod
+    def get_llm_model() -> str:
+        return os.environ.get("LLM_MODEL", "qwen2.5:3b")
+
+    @staticmethod
+    def get_embedding_model() -> str:
+        return os.environ.get("EMBEDDING_MODEL", "nomic-embed-text")
+
+    @staticmethod
+    def get_vision_model() -> str:
+        return os.environ.get("VISION_MODEL", "llava-phi3:3.8b")
+
+    @staticmethod
     def generate_response(
-        provider: str,
-        model_name: str,
-        messages: List[Dict[str, str]],
-        stream: bool = False
+        provider: Optional[str] = None,
+        model_name: Optional[str] = None,
+        messages: List[Dict[str, str]] = None,
+        stream: bool = False,
+        fallback: bool = True
     ) -> Union[str, Generator[str, None, None]]:
         """
         Execute request to the selected LLM provider.
+        Defaults to OLLAMA. Falls back to GROQ if primary fails and fallback=True.
         """
+        if provider is None:
+            provider = LLMService.get_primary_provider()
+        if model_name is None:
+            model_name = LLMService.get_llm_model()
         provider = provider.lower()
 
-        # Intercept routing classifier prompts in mock environments
-        for msg in messages:
+        # Intercept routing classifier prompts
+        for msg in (messages or []):
             if msg.get("role") == "system" and "routing classification system" in msg.get("content", ""):
                 user_content = next((m.get("content", "") for m in messages if m.get("role") == "user"), "")
                 if "joke" in user_content.lower() or "general" in user_content.lower():
                     return "YES"
                 return "NO"
-        
-        if provider == "openai":
-            return LLMService._openai(model_name, messages, stream)
-        elif provider == "gemini":
-            return LLMService._gemini(model_name, messages, stream)
-        elif provider == "claude" or provider == "anthropic":
-            return LLMService._anthropic(model_name, messages, stream)
-        elif provider == "grok":
-            return LLMService._grok(model_name, messages, stream)
-        elif provider == "ollama":
-            return LLMService._ollama(model_name, messages, stream)
-        else:
-            raise ValueError(f"Unknown LLM provider: {provider}")
+
+        try:
+            if provider == "openai":
+                return LLMService._openai(model_name, messages, stream)
+            elif provider == "gemini":
+                return LLMService._gemini(model_name, messages, stream)
+            elif provider == "claude" or provider == "anthropic":
+                return LLMService._anthropic(model_name, messages, stream)
+            elif provider == "grok":
+                return LLMService._grok(model_name, messages, stream)
+            elif provider == "groq":
+                return LLMService._groq(model_name, messages, stream)
+            elif provider == "ollama":
+                return LLMService._ollama(model_name, messages, stream)
+            else:
+                raise ValueError(f"Unknown LLM provider: {provider}")
+        except Exception as e:
+            logger.warning(f"Provider '{provider}' failed: {e}")
+            if fallback and provider != "ollama":
+                logger.info("Falling back to Ollama...")
+                return LLMService._ollama(LLMService.get_llm_model(), messages, stream)
+            elif fallback and provider == "ollama":
+                groq_key = os.environ.get("GROQ_API_KEY")
+                if groq_key:
+                    logger.info("Falling back to Groq...")
+                    return LLMService._groq("llama-3.3-70b-versatile", messages, stream)
+            raise
 
     @staticmethod
     def _openai(model: str, messages: List[Dict[str, str]], stream: bool) -> Union[str, Generator[str, None, None]]:
@@ -169,11 +205,37 @@ class LLMService:
             return response.choices[0].message.content
 
     @staticmethod
+    def _groq(model: str, messages: List[Dict[str, str]], stream: bool) -> Union[str, Generator[str, None, None]]:
+        api_key = os.environ.get("GROQ_API_KEY")
+        if not api_key:
+            return LLMService._mock_response("Groq (no API key)", stream)
+
+        client = OpenAI(
+            api_key=api_key,
+            base_url="https://api.groq.com/openai/v1"
+        )
+        response = client.chat.completions.create(
+            model=model or "llama-3.3-70b-versatile",
+            messages=messages,
+            stream=stream
+        )
+
+        if stream:
+            def gen():
+                for chunk in response:
+                    content = chunk.choices[0].delta.content
+                    if content:
+                        yield content
+            return gen()
+        else:
+            return response.choices[0].message.content
+
+    @staticmethod
     def _ollama(model: str, messages: List[Dict[str, str]], stream: bool) -> Union[str, Generator[str, None, None]]:
         base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
         url = f"{base_url}/api/chat"
         payload = {
-            "model": model or "llama3",
+            "model": model or "qwen2.5:3b",
             "messages": messages,
             "stream": stream
         }

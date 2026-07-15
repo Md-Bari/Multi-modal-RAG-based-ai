@@ -30,6 +30,29 @@ services:
       timeout: 5s
       retries: 5
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: chetopia_ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./ollama-entrypoint.sh:/entrypoint.sh
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
   web:
     build:
       context: .
@@ -43,11 +66,18 @@ services:
     environment:
       - DATABASE_URL=postgres://postgres:postgres@db:5432/chetopia
       - REDIS_URL=redis://redis:6379/0
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - LLM_PROVIDER=ollama
+      - LLM_MODEL=qwen2.5:3b
+      - VISION_MODEL=llava-phi3:3.8b
+      - EMBEDDING_MODEL=nomic-embed-text
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
+      ollama:
+        condition: service_started
     volumes:
       - ./Django/Multi_Model_AI:/app
 
@@ -62,6 +92,11 @@ services:
     environment:
       - DATABASE_URL=postgres://postgres:postgres@db:5432/chetopia
       - REDIS_URL=redis://redis:6379/0
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - LLM_PROVIDER=ollama
+      - LLM_MODEL=qwen2.5:3b
+      - VISION_MODEL=llava-phi3:3.8b
+      - EMBEDDING_MODEL=nomic-embed-text
     depends_on:
       db:
         condition: service_healthy
@@ -81,6 +116,11 @@ services:
     environment:
       - DATABASE_URL=postgres://postgres:postgres@db:5432/chetopia
       - REDIS_URL=redis://redis:6379/0
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - LLM_PROVIDER=ollama
+      - LLM_MODEL=qwen2.5:3b
+      - VISION_MODEL=llava-phi3:3.8b
+      - EMBEDDING_MODEL=nomic-embed-text
     depends_on:
       db:
         condition: service_healthy
@@ -92,3 +132,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  ollama_data:

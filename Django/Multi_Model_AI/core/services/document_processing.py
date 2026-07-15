@@ -2,11 +2,12 @@ import os
 import logging
 import csv
 import io
+import requests
 from typing import List, Dict, Any
 from django.utils import timezone
 from core.models import Document, Chunk, ProcessingJob
 from core.services.ocr_service import OCRService
-from openai import OpenAI
+from core.services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
 
@@ -243,39 +244,43 @@ class DocumentProcessor:
         return chunks
 
     @staticmethod
+    def _embed_text(text: str) -> list:
+        """Embed a single text chunk using Ollama."""
+        base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        model = LLMService.get_embedding_model()
+        try:
+            response = requests.post(
+                f"{base_url}/api/embed",
+                json={"model": model, "input": text},
+                timeout=30
+            )
+            if response.status_code == 200:
+                data = response.json()
+                embeddings = data.get("embeddings", [])
+                if embeddings:
+                    return embeddings[0]
+        except Exception as e:
+            logger.error(f"Ollama embedding failed: {str(e)}")
+        return None
+
+    @staticmethod
     def _embed_and_index_chunks(document: Document, chunks: List[str]) -> None:
         """
-        Generate embedding vectors for all chunks and save them.
+        Generate embedding vectors for all chunks and save them using Ollama.
         """
-        api_key = os.environ.get("OPENAI_API_KEY")
-        client = None
-        if api_key and api_key != "mock-openai-key-replace-me":
-            client = OpenAI(api_key=api_key)
+        embed_dim = 768
 
         # Clear existing chunks
         Chunk.objects.filter(document=document).delete()
 
         for idx, text_content in enumerate(chunks):
-            # Calculate mock or real tokens (rough estimation)
             token_count = len(text_content.split())
             
-            # Vector initialization
-            vector = None
-            if client:
-                try:
-                    response = client.embeddings.create(
-                        input=[text_content],
-                        model="text-embedding-3-small"
-                    )
-                    vector = response.data[0].embedding
-                except Exception as e:
-                    logger.error(f"OpenAI embedding generation failed: {str(e)}")
+            vector = DocumentProcessor._embed_text(text_content)
 
             if vector is None:
-                # Use a dummy 1536-dim vector if API is not set
-                vector = [0.0] * 1536
-                # Put a dummy value that is indexable
-                vector[idx % 1536] = 1.0
+                vector = [0.0] * embed_dim
+                vector[idx % embed_dim] = 1.0
 
             Chunk.objects.create(
                 document=document,

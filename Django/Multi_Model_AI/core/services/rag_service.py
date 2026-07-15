@@ -1,9 +1,11 @@
 import logging
 import numpy as np
+import requests
+import json
 from django.db import connection
 from django.conf import settings
 from core.models import Chunk, Document, Conversation, Message, TokenUsage
-from openai import OpenAI
+from core.services.llm_service import LLMService
 import os
 
 logger = logging.getLogger(__name__)
@@ -16,26 +18,41 @@ except ImportError:
     CosineDistance = None
     pgvector_available = False
 
+EMBED_DIM = 768
+
 class RAGService:
+    @staticmethod
+    def get_embedding_dim() -> int:
+        return EMBED_DIM
+
+    @staticmethod
+    def get_similarity_threshold() -> float:
+        return float(os.environ.get("SIMILARITY_THRESHOLD", "0.45"))
+
+    @staticmethod
+    def get_top_k() -> int:
+        return int(os.environ.get("TOP_K", "5"))
+
     @staticmethod
     def get_query_embedding(query: str) -> list:
         """
-        Generate embedding for user query.
+        Generate embedding for user query using Ollama's nomic-embed-text.
         """
-        api_key = os.environ.get("OPENAI_API_KEY")
-        if api_key and api_key != "mock-openai-key-replace-me":
-            try:
-                client = OpenAI(api_key=api_key)
-                response = client.embeddings.create(
-                    input=[query],
-                    model="text-embedding-3-small"
-                )
-                return response.data[0].embedding
-            except Exception as e:
-                logger.error(f"Failed to generate query embedding: {str(e)}")
+        base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        model = LLMService.get_embedding_model()
+        url = f"{base_url}/api/embed"
+        try:
+            response = requests.post(url, json={"model": model, "input": query}, timeout=30)
+            if response.status_code == 200:
+                data = response.json()
+                embeddings = data.get("embeddings", [])
+                if embeddings:
+                    return embeddings[0]
+        except Exception as e:
+            logger.error(f"Ollama embedding failed: {str(e)}")
         
         # Fallback dummy vector
-        vector = [0.0] * 1536
+        vector = [0.0] * EMBED_DIM
         vector[0] = 1.0
         return vector
 
