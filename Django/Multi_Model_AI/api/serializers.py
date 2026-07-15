@@ -32,14 +32,14 @@ class KnowledgeBaseSerializer(serializers.ModelSerializer):
     class Meta:
         model = KnowledgeBase
         fields = ['id', 'org', 'owner', 'name', 'description', 'version', 'status', 'created_at', 'updated_at', 'last_synced_at']
-        read_only_fields = ['owner', 'created_at', 'updated_at', 'last_synced_at']
+        read_only_fields = ['org', 'owner', 'created_at', 'updated_at', 'last_synced_at']
 
 
 class DocumentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Document
         fields = ['id', 'kb', 'uploaded_by', 'source_type', 'original_filename', 'storage_url', 'status', 'metadata', 'created_at']
-        read_only_fields = ['uploaded_by', 'status', 'created_at']
+        read_only_fields = ['kb', 'uploaded_by', 'status', 'created_at']
 
 
 class MessageSerializer(serializers.ModelSerializer):
@@ -55,7 +55,7 @@ class ConversationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Conversation
         fields = ['id', 'kb', 'user', 'title', 'created_at', 'updated_at', 'messages']
-        read_only_fields = ['user', 'created_at', 'updated_at']
+        read_only_fields = ['kb', 'user', 'created_at', 'updated_at']
 
 
 class TokenUsageSerializer(serializers.ModelSerializer):
